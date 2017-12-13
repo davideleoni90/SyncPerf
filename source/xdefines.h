@@ -58,33 +58,33 @@ extern "C"
 
   typedef struct thread {
 
-    int       index;
+    int index;
 
-		// What is the actual thread id. tid can be greater than 1024.
-		int       tid;
-		
-		// Who is my parent;
-		int       pindex;
-		pid_t     ptid;
+    // What is the actual thread id. tid can be greater than 1024.
+    int tid;
+	
+    // Who is my parent;
+    int pindex;
+    pid_t ptid;
 
-		// Who is my children in this phase;
-		int childBeginIndex;
-		int childEndIndex;
+    // Who is my children in this phase;
+    int childBeginIndex;
+    int childEndIndex;
  
     pthread_t self; // Results of pthread_self
-		char outputBuf[LOG_SIZE];	
+    char outputBuf[LOG_SIZE];	
 
     // The following is the parameter about starting function. 
     threadFunction * startRoutine;
     void * startArg; 
 
-		// How much latency for all accesses on this thread?
-		struct timeinfo startTime;
-		//unsigned long actualRuntime;
-		double actualRuntime;
-		//unsigned long parentRuntime;
-		double parentRuntime;
-		unsigned long levelIndex; // In which phase
+    // How much latency for all accesses on this thread?
+    struct timeinfo startTime;
+    //unsigned long actualRuntime;
+    double actualRuntime;
+    //unsigned long parentRuntime;
+    double parentRuntime;
+    unsigned long levelIndex; // In which phase
 
 
     // We used this to record the stack range
@@ -98,13 +98,13 @@ extern "C"
   extern __thread thread_t * current;
   //extern __thread bool isBacktrace; 
   //extern bool initialized;
-	extern bool _isMultithreading;
+  extern bool _isMultithreading;
 	
 
-	// inline char getThreadBuffer()
-	inline char * getThreadBuffer() {
-		return current->outputBuf;
-	}
+  // inline char getThreadBuffer()
+  inline char * getThreadBuffer() {
+    return current->outputBuf;
+  }
 
   // Get thread index
   inline int getTid(void) {
@@ -115,8 +115,8 @@ extern "C"
   inline int getThreadIndex(void) {
     return current->index;
   }
-	// Get thread stackTop
-	inline unsigned int getThreadStackTop(void) {
+  // Get thread stackTop
+  inline unsigned int getThreadStackTop(void) {
     return (unsigned int)current->stackTop;
   }
 
@@ -167,7 +167,7 @@ public:
 
   enum { MAX_THREADS = 2048 };//4096 };
 
-	enum { MAX_SYNC_ENTRIES = 1000000 };
+  enum { MAX_SYNC_ENTRIES = 1000000 };
 		
 	// We only support 64 heaps in total.
   enum { NUM_HEAPS = 128 };

@@ -11,7 +11,7 @@ extern "C" {
 
 #include "finetime.h"
 
-#define MAX_CALL_STACK_DEPTH 6
+#define MAX_CALL_STACK_DEPTH 15
 #define MAX_NUM_STACKS 100
 
 #ifdef GET_STATISTICS
@@ -34,7 +34,8 @@ typedef struct {
 	int stack_count; // how many different call sites
 	size_t esp_offset[MAX_NUM_STACKS];
 	size_t eip[MAX_NUM_STACKS];
-	size_t stacks[MAX_NUM_STACKS][MAX_CALL_STACK_DEPTH+1];
+	//size_t stacks[MAX_NUM_STACKS][MAX_CALL_STACK_DEPTH+1];
+	void* stacks[MAX_NUM_STACKS][MAX_CALL_STACK_DEPTH+1];
 }mutex_t;
 
 

@@ -144,9 +144,9 @@ int add_new_context( mutex_t *mutex, long ret_address, unsigned int esp_offset )
   }
 
   assert(mutex->stack_count < MAX_NUM_STACKS);
-	
   // increment stack count atomically
-  do_backtrace(mutex->stacks[mutex->stack_count], MAX_CALL_STACK_DEPTH);
+  //do_backtrace(mutex->stacks[mutex->stack_count], MAX_CALL_STACK_DEPTH+1);
+  backtrace(mutex->stacks[mutex->stack_count], MAX_CALL_STACK_DEPTH+1);
 	mutex->eip[mutex->stack_count] = ret_address;
   mutex->esp_offset[mutex->stack_count] = esp_offset;
 	mutex->stack_count++;
@@ -237,8 +237,6 @@ void inc_trylock_fail_count(size_t mut_index, int thd_idx){
 }
 
 #endif // WITH_TRYLOCK
-
-
 
 int do_backtrace(long stacks[ ], int size)
 {

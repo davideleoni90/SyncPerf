@@ -1,10 +1,10 @@
 #OBJS = nptl-init.o 
 CC = gcc
-CFLAGS= -g -O2 -fno-omit-frame-pointer -I. -D_GNU_SOURCE -fPIC -DWITH_TRYLOCK  -DREPORT_LINE_INFO -DGET_STATISTICS #-DCONTEXT_SORT #-DUSE_BINDING   
+CFLAGS= -g -Og -fno-omit-frame-pointer -I. -D_GNU_SOURCE -fPIC -DWITH_TRYLOCK  -DREPORT_LINE_INFO -DGET_STATISTICS #-DCONTEXT_SORT #-DUSE_BINDING   
 
 
 LD = $(CC)
-LDFLAGS = -lpthread -ldl  -shared -lstdc++
+LDFLAGS = -rdynamic -lpthread -ldl  -shared -lstdc++
 
 TARGET = liblockperf.so 
 

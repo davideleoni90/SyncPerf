@@ -12,6 +12,12 @@
 #include<vector>
 #include <stdexcept>
 
+// (dleoni) Include to use backtrace
+#include <execinfo.h>
+
+// (dleoni) Include to demangle C++ function names
+#include <cxxabi.h>
+
 #define MAXBUFSIZE 4096
 #define COMBINED_REPORT 1
 
@@ -89,7 +95,45 @@ public:
 	
 	}
 
-  std::string get_call_stack_string( long *call_stack ){
+  // (dleoni) For each frame in the call stack, extract a string:
+  // function_name|offset
+  // The c-string in input is as follows:
+  // module_name(mangled_function_name+offset) [return_address]
+
+  std::string parse_stack_frame(char* frame) {
+    
+    // Convert to std::string becaue it's easier to handle
+    std::string frame_string = std::string(frame);
+
+    // Get the mangled function name
+    int first_parenthesis = frame_string.find("(");
+    int plus_sign = frame_string.find("+");
+    if ((first_parenthesis == std::string::npos) || (plus_sign == std::string::npos))
+       return "---";
+    std::string function = frame_string.substr(first_parenthesis+1, plus_sign - first_parenthesis - 1 );
+
+    // Demangle the function name
+    size_t funcnamesize = 256;
+    char* funcname = (char*)malloc(funcnamesize);
+    int status;
+    char* demangled = abi::__cxa_demangle(function.c_str(), funcname, &funcnamesize, &status);
+    if (!status) {
+       function = std::string(demangled);
+    }
+     
+    // Get the offset
+    int second_parenthesis = frame_string.find(")");
+    std::string offset = frame_string.substr(plus_sign + 1, second_parenthesis - plus_sign - 1);
+    if (second_parenthesis == std::string::npos)
+       return "---"; 
+
+    // return function_name|offset
+    return function + "|" + offset;
+    
+  }
+
+  //std::string get_call_stack_string( long *call_stack ){
+  std::string get_call_stack_string( void **call_stack ){
 
     //char _curFilename[MAXBUFSIZE];
     //int count = readlink("/proc/self/exe", _curFilename, MAXBUFSIZE);
@@ -104,9 +148,20 @@ public:
 		
     char buf[MAXBUFSIZE];
     std::string stack_str="";
-
+    
+    // (dleoni) Array of strings, each corresponding to a stack frame
+    char **strings;
     int j=0;
-    while(call_stack[j] != 0 ) {
+    // (dleoni) Get the string representaion of the stack frame
+    strings = backtrace_symbols(call_stack, MAX_CALL_STACK_DEPTH+1);
+    // (dleoni) Parse each stack frame (skip the current function)
+    for (j = 1; j < MAX_CALL_STACK_DEPTH+1; j++) {
+        if(!std::string(strings[j]).compare("[(nil)]")) continue;
+        stack_str += parse_stack_frame(strings[j]);
+        stack_str += "\n";
+    }
+    free(strings);
+    /*while(call_stack[j] != 0 ) {
       //printf("%#lx\n", m->stacks[i][j]);  
       sprintf(buf, "addr2line -e %s  -a 0x%lx  | tail -1", _curFilename, call_stack[j] );
       std::string source_line =  exec(buf);
@@ -118,7 +173,7 @@ public:
         stack_str += " ";
       }
       j++;
-    }
+    }*/
     return stack_str;
   }
 
@@ -228,7 +283,7 @@ public:
 		unsigned long qlh_count = 0;
 		unsigned long qhl_count  = 0;
 #endif
-	  int total_threads = xthread::getInstance().getMaxThreadIndex();
+	  	int total_threads = xthread::getInstance().getMaxThreadIndex();
 		unsigned long total_levels = xthread::getInstance().getTotalThreadLevels();
 
 		WAIT_TIME_TYPE *thread_waits = malloc(sizeof(WAIT_TIME_TYPE)*total_threads);
@@ -280,7 +335,7 @@ public:
 			// sum all thread local data
 			for(int idx=0; idx<total_threads; idx++ ){
 				//count
-			  thread_mutex_t *per_thd_data = get_thread_mutex_data( m->entry_index, idx);
+			  	thread_mutex_t *per_thd_data = get_thread_mutex_data( m->entry_index, idx);
 				total_access_count += per_thd_data->access_count;
 				total_fail_count += per_thd_data->fail_count;
 				total_cond_wait += per_thd_data->cond_waits;
@@ -309,7 +364,7 @@ public:
 					updateCallStackMap(call_stack_map, call_contexts,sync_perf_entry.conflict_rate);
 #else
 					int depth = 0;
-			  	std::string call_contexts = "";
+			  		std::string call_contexts = "";
 					while(m->stacks[con][depth]){	
 							call_contexts += "0x";
 							//call_contexts += std::to_string(m->stacks[con][depth]);
@@ -319,8 +374,10 @@ public:
 							call_contexts += ",";
 							depth++; 
 					}									
-#endif
-					assert(call_contexts.size() <= MAX_CALL_STACK_DEPTH * 50);
+#endif					
+					//assert(call_contexts.size() <= MAX_CALL_STACK_DEPTH * 50);
+					// (dleoni) With C++ the name of a function may be very long
+					assert(call_contexts.size() <= MAX_CALL_STACK_DEPTH * 200);
 					strcpy(sync_perf_entry.line_info[con], call_contexts.c_str());
 					sync_perf_entry.count++;
 				}
@@ -366,7 +423,7 @@ public:
 
 		for(int idx=0; idx< total_threads; idx++){
 			thread_t *thd = xthread::getInstance().getThreadInfoByIndex(idx);
-			thd_fs << idx << ", " << std::hex <<(void*)( thd->startRoutine)<< ", " <<std::dec<< thd->actualRuntime << "," <<  thread_waits[idx]  << std::endl;
+			thd_fs << idx << ", " << std::hex <<(void*)( thd->startRoutine)<< ", " <<std::dec<< thd->actualRuntime << ", " <<  thread_waits[idx]  << std::endl;
 		}
 
 		
@@ -398,7 +455,7 @@ public:
 
 #ifdef REPORT_LINE_INFO
 		//find asymmetric locks
-		//printCallStackMap(call_stack_map);
+		printCallStackMap(call_stack_map);
 		std::vector<std::string>asym_locks;
 		findAsymmetricLock(call_stack_map,asym_locks);
 		
@@ -416,6 +473,9 @@ public:
 #endif
 #ifdef GET_STATISTICS
 		std::cout<< "STATISTICS:\n";
+		std::cout<< "\ttotal Threads: " << total_threads << std::endl;
+		std::cout<< "\ttotal Levels: " << total_levels << std::endl;
+		std::cout<< "\ttotal Thread levels: " << total_thread_levels << std::endl;
 		std::cout<< "\ttotal Distinct Locks: " << id << std::endl;
 		std::cout<< "\ttatal Acquired Locks: " << totalLocks << std::endl;
 		std::cout<< "\ttatal Conflicts: " << totalConflicts << std::endl;
@@ -436,11 +496,11 @@ public:
 			id++;
 			fs << "No."<< id << std::endl;
 			fs << "-------" << std::endl;
-			fs << "\t\tConflict Rate: " << it->conflict_rate << std::endl;
-			fs << "\t\tAcquisition Frequency: " << it->frequency << std::endl;
-			fs << "\t\tLine Numbers: " << it->count << std::endl;
+			fs << "Conflict Rate: " << it->conflict_rate << std::endl;
+			fs << "Acquisition Frequency: " << it->frequency << std::endl;
+			fs << "Line Numbers: " << it->count << std::endl;
 			for( int i=0; i<it->count; i++ ){
-				fs << "\t\t\t" << it->line_info[i] << std::endl;
+				fs << it->line_info[i] << std::endl;
 			}	
 		}
 
