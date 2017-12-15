@@ -71,12 +71,12 @@ public:
     return entry;
   }
 #endif
-	size_t get_next_index() {
-		int val = __atomic_fetch_add(&_cur,1, __ATOMIC_RELAXED);
+  size_t get_next_index() {
+    int val = __atomic_fetch_add(&_cur,1, __ATOMIC_RELAXED);
 
-		if(val < _total){
-			return val;		
-		} else {
+    if(val < _total){
+      return val;		
+    } else {
       // There are no enough entries now; re-allocate new entries now.
       printf("Not enough entries, now _cur %lu, _total %lu at %p!!!\n", _cur, _total, &_cur);
       ::abort();

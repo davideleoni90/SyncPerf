@@ -28,7 +28,7 @@ typedef struct {
 	pthread_mutex_t mutex;
 
 	// Keep the address of nominal mutex;
-	pthread_mutex_t * nominalmutex;
+	pthread_mutex_t * nominalmutex; // NOT USED
 
 	size_t entry_index; // mutex entry per thread index 
 	int stack_count; // how many different call sites

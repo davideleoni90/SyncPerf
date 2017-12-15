@@ -35,18 +35,17 @@ public:
   void initialize()
   {
 #ifdef GET_STATISTICS
-		totalLocks = 0;
+    totalLocks = 0;
 #endif
-		installSignalHandler();
+    installSignalHandler();
 
-		xthread::getInstance().initialize();
+    xthread::getInstance().initialize();
 		
   }
 
   void finalize (void)
   {
-
-		xthread::getInstance().finalize();
+    xthread::getInstance().finalize();
   }
   /// @brief Install a handler for KILL signals.
   void installSignalHandler() {
@@ -64,13 +63,13 @@ public:
     if (sigaction(SIGUSR2, &siga, NULL) == -1) {
       perror ("installing SIGUSR2 failed\n");
       exit (-1);
-		}
+    }
 #endif
-	}
+  }
 
-	static void sigHandler(int signum) {
+  static void sigHandler(int signum) {
     if(signum == SIGINT) {
-			fprintf(stderr, "Recieved SIGINT, Genearting Report\n");
+      fprintf(stderr, "Recieved SIGINT, Genearting Report\n");
       exit(0);
     }
     else if (signum == SIGUSR2) {

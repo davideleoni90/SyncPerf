@@ -65,10 +65,9 @@ pthread_mutex_lock (pthread_mutex_t *mutex)
 	int tid = getThreadIndex();
 
 #ifndef NO_INCR // when not called for cond_lock
-	if( !is_my_mutex(mutex) ) 
-  {
-		mutex_t *new_mutex = create_mutex(mutex);
-    setSyncEntry(mutex, new_mutex);
+	if( !is_my_mutex(mutex) ) {
+	  mutex_t *new_mutex = create_mutex(mutex);
+          setSyncEntry(mutex, new_mutex);
 	}
 	
 #endif

@@ -36,12 +36,17 @@ pthread_mutex_t g_mutex_list_lock=PTHREAD_MUTEX_INITIALIZER; // global lock
 
 mutex_t* create_mutex( pthread_mutex_t *mutex )
 {
-  //printf("create my mutex\n");
+  //printf("create my mutex:%p\n", mutex);
   size_t entry_index = sync_vars.get_next_index(); 
-	mutex_t *new_mutex = sync_vars.getEntry(entry_index);
+  mutex_t *new_mutex = sync_vars.getEntry(entry_index);
   new_mutex->stack_count = 0;
-	new_mutex->entry_index = entry_index;
-	
+  new_mutex->entry_index = entry_index;
+
+  // (dleoni) Store also the pointer to the original mutex
+  // (for debugging purpose)
+  new_mutex->nominalmutex = mutex;
+  printf("MUTEX:%p\n", mutex);
+  fflush(stdout);
   return new_mutex;
 }
 
@@ -49,11 +54,13 @@ int is_my_mutex(void *mutex)
 {
     void **tmp;
     tmp = mutex;
-
-    if( *tmp != NULL)
+    
+    if( *tmp != NULL) {
         return 1;
-    else 
+    }
+    else {
         return 0;
+    }
 }
 
 void* get_mutex( void *mutex )
@@ -135,21 +142,22 @@ int comp_stack( long s1[], long s2[] ){
 #endif
 
 int add_new_context( mutex_t *mutex, long ret_address, unsigned int esp_offset ) {
-	for( int i=0; i< mutex->stack_count; i++ ){
+  for( int i=0; i< mutex->stack_count; i++ ){
     if(mutex->eip[i] == ret_address) {
-    	//if(mutex->esp_offset[i] == esp_offset) {
-				return 0;
-			//}
-		}
+    //if(mutex->esp_offset[i] == esp_offset) {
+      //printf("RETURN 0\n");
+      return 0;
+    //}
+    }
   }
-
+  //printf("NEW address:%ld\n", ret_address);
   assert(mutex->stack_count < MAX_NUM_STACKS);
   // increment stack count atomically
   //do_backtrace(mutex->stacks[mutex->stack_count], MAX_CALL_STACK_DEPTH+1);
   backtrace(mutex->stacks[mutex->stack_count], MAX_CALL_STACK_DEPTH+1);
-	mutex->eip[mutex->stack_count] = ret_address;
+  mutex->eip[mutex->stack_count] = ret_address;
   mutex->esp_offset[mutex->stack_count] = esp_offset;
-	mutex->stack_count++;
+  mutex->stack_count++;
   return 0;
 }
 

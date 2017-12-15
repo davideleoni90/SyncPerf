@@ -350,7 +350,8 @@ public:
 			sync_perf_t sync_perf_entry;
 			sync_perf_entry.count = 0;
 			if( total_access_count > 0 ) { //TODO: access_count = 0 is poosible as fix setSyncEntry ignores new mutex ,index already increased in recordentries
-
+				printf("TOPEX:%p\n", m->nominalmutex);
+                        	fflush(stdout);	
 				id++; //for debug only and for stats
 
 				sync_perf_entry.conflict_rate = (100*total_fail_count)/double(total_access_count);
