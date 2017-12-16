@@ -1,16 +1,17 @@
 #ifndef _REPORT_H_
 #define _REPORT_H_
 
-#include<iostream>
-#include<fstream>
-#include<sstream>
-#include<string>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include "xdefines.h"
 #include "recordentries.hh"
 #include "mutex_manager.h"
-#include<map>
-#include<vector>
+#include <map>
+#include <vector>
 #include <stdexcept>
+#include <set>
 
 // (dleoni) Include to use backtrace
 #include <execinfo.h>
@@ -59,39 +60,40 @@ private:
 public:
 	static Report& getInstance() {
 		static Report instance;
-    return instance;		
+        	return instance;		
 	}	
 
 	enum { THRESHOLD_CONFLICT = 5 };
 	enum { THRESHOLD_FREQUENCY = 1 }; //per millisecond
 
-	std::string exec(const char* cmd) {
+	std::string exec (const char* cmd) {
 		//std::cout << "exec CMD: " << cmd << std::endl; //TODO: remove this
-    FILE* pipe = popen(cmd, "r");
-    if (!pipe) {
+    		FILE* pipe = popen(cmd, "r");
+    		if (!pipe) {
 			fprintf( stderr, "Could not pipe in exec function\n" );
 			return "ERROR";
 		}
-    char buffer[128];
-    std::string result = "";
-    while (!feof(pipe)) {
-        if (fgets(buffer, 128, pipe) != NULL){
-						//printf("%s", buffer); //TODO: remove this
-            result += buffer;
-				}
-    }
-    pclose(pipe);
-    return result;
-  }
+    	
+		char buffer[128];
+    		std::string result = "";
+    		while (!feof(pipe)) {
+        	if (fgets(buffer, 128, pipe) != NULL){
+			//printf("%s", buffer); //TODO: remove this
+			result += buffer;
+		}
+    		}
+    		pclose(pipe);
+		return result;
+	}
 
 	void setFileName(){
 		int count = readlink("/proc/self/exe", _curFilename, MAXBUFSIZE);
-    if (count <= 0 || count >= MAXBUFSIZE)
-    {
-      fprintf(stderr, "Failed to get current executable file name\n" );
-      exit(1);
-    }
-    _curFilename[count] = '\0';
+		if (count <= 0 || count >= MAXBUFSIZE)
+		{
+       			fprintf(stderr, "Failed to get current executable file name\n" );
+			exit(1);
+    		}
+    		_curFilename[count] = '\0';
 	
 	}
 
@@ -108,7 +110,7 @@ public:
     // Get the mangled function name
     int first_parenthesis = frame_string.find("(");
     int plus_sign = frame_string.find("+");
-    if ((first_parenthesis == std::string::npos) || (plus_sign == std::string::npos))
+    if ((first_parenthesis == std::string::npos) || (plus_sign == std::string::npos) || (!(plus_sign - first_parenthesis - 1)))
        return "---";
     std::string function = frame_string.substr(first_parenthesis+1, plus_sign - first_parenthesis - 1 );
 
@@ -124,7 +126,7 @@ public:
     // Get the offset
     int second_parenthesis = frame_string.find(")");
     std::string offset = frame_string.substr(plus_sign + 1, second_parenthesis - plus_sign - 1);
-    if (second_parenthesis == std::string::npos)
+    if ((second_parenthesis == std::string::npos) || (!(second_parenthesis - plus_sign - 1)))
        return "---"; 
 
     // return function_name|offset
@@ -157,7 +159,10 @@ public:
     // (dleoni) Parse each stack frame (skip the current function)
     for (j = 1; j < MAX_CALL_STACK_DEPTH+1; j++) {
         if(!std::string(strings[j]).compare("[(nil)]")) continue;
-        stack_str += parse_stack_frame(strings[j]);
+        std::string frame = parse_stack_frame(strings[j]);
+	if (!frame.compare("---"))
+		continue;
+	stack_str += frame;
         stack_str += "\n";
     }
     free(strings);
@@ -274,9 +279,9 @@ public:
 		qhl_fs << "HIGH CONFLICT , LOW FREQUENCY" << std::endl;
 		qhl_fs << "==============================" << std::endl;	
 
-	//low conflict, high frequency
+		//low conflict, high frequency
 		qlh_fs << "\n\n==============================" << std::endl;
-		qlh_fs << "LOW CONFLICT , HIGH FREQUENCY" << std::endl;
+                qlh_fs << "LOW CONFLICT , HIGH FREQUENCY" << std::endl;
 		qlh_fs << "==============================" << std::endl;
 
 		unsigned long qhh_count = 0;
@@ -290,10 +295,8 @@ public:
 		for(int idx=0; idx<total_threads; idx++) thread_waits[idx] = 0;	
 #if 0	
 		std::fstream thd_fs;
-
 		thd_fs.open("thread_waits.csv", std::fstream::out);
 		thd_fs << "tid, type, runtime, wait_time" << std::endl; 
-
 		for(int idx=0; idx< total_threads; idx++){
 			thread_t *thd = xthread::getInstance().getThreadInfoByIndex(idx);
 			thd_fs << idx << ", " << std::hex <<(void*)( thd->startRoutine)<< ", " <<std::dec<< thd->actualRuntime << "," <<  thread_waits[idx]  << std::endl;
@@ -318,8 +321,165 @@ public:
 #endif
 		int total_sync_vars = sync_vars.getEntriesNumb();
 
-		int id = 0; //for debugging puporse, shoud match with total locks	
+		int id = 0; //for debugging puporse, shoud match with total locks
+		int total = 0;
 
+		// A map with one key for each pthread_mutex_t* and multiple values corresponding to all the mutex_t that are
+		// pointed by it (duplicates)
+		std::multimap<pthread_mutex_t*, mutex_t*> sync_vars_unique;		
+
+		// Find the duplicates
+		for(int i=0; i < total_sync_vars; i++) {
+			
+			mutex_t *m = sync_vars.getEntry(i);
+			sync_vars_unique.insert(std::pair<pthread_mutex_t*, mutex_t*>(m -> nominalmutex, m));
+		}
+
+		// Get the statistics for each pthread_mutex_t, for each mutex_t , for each thread
+		for (std::multimap<pthread_mutex_t*, mutex_t*>::iterator it = sync_vars_unique.begin(); it != sync_vars_unique.end(); it = sync_vars_unique.upper_bound(it->first)) {
+
+			// A key
+			pthread_mutex_t* key = it -> first;
+
+			std::cout << sync_vars_unique.count((*it).first) - 1 << " " << (*it).first << " DUPLICATES" << std::endl;
+			
+			// For debug only and for stats
+			id++;
+			total += sync_vars_unique.count((*it).first);
+			
+			// Statistics to be collected for each pthread_mutex_t (key)
+			unsigned int total_access_count = 0;
+			unsigned int total_fail_count = 0;
+			unsigned int total_cond_wait = 0;
+			unsigned int total_trylock_fails = 0;
+			WAIT_TIME_TYPE total_wait_time = 0;
+			WAIT_TIME_TYPE total_lock_wait = 0;			
+			
+			// The entry in the final report corresponding to the current pthread_mutex_t*	
+			sync_perf_t sync_perf_entry;
+
+			// The set of the call stacks ending with an acquisition of the current mutex
+			std::set<std::string> call_stacks;
+
+			// The counter for the number of stack traces that end with the acquisition of the current mutex
+			sync_perf_entry.count = 0;
+			
+			// Get all the mutex_t (values) corresponding to the current pthred_mutex_t* (key)
+			std::pair <std::multimap<pthread_mutex_t*, mutex_t*>::iterator, std::multimap<pthread_mutex_t*, mutex_t*>::iterator> values_iterator;
+			// The first field points to the first value, second to the last value 
+			values_iterator = sync_vars_unique.equal_range(key);
+			
+			// For each mutex_t (value) corresponding to the pthread_mutex_t (key), aggregate values over threads
+			for (std::multimap<pthread_mutex_t*, mutex_t*>::iterator ite = values_iterator.first; ite != values_iterator.second; ++ite) {
+				
+				// A value
+				mutex_t* value = ite -> second;
+		
+				// Sum all the thread local data
+				for (int idx = 0; idx < total_threads; idx++ ) {
+					//count
+			  		thread_mutex_t *per_thd_data = get_thread_mutex_data( value->entry_index, idx);
+					total_access_count += per_thd_data->access_count;
+					total_fail_count += per_thd_data->fail_count;
+					total_cond_wait += per_thd_data->cond_waits;
+					total_trylock_fails += per_thd_data->trylock_fail_count;
+					//times
+					total_wait_time += per_thd_data->cond_futex_wait;
+					total_lock_wait += per_thd_data->futex_wait;
+					thread_waits[idx] += (per_thd_data->cond_futex_wait + per_thd_data->futex_wait);
+				}
+
+				// Add the call stacks for the current value to those corresponding to the current key
+				for(int con=0; con < value -> stack_count; con++) {
+#ifdef REPORT_LINE_INFO
+					std::string call_contexts = get_call_stack_string(value -> stacks[con]);		
+					
+					//update call stack map
+					//updateCallStackMap(call_stack_map, call_contexts,sync_perf_entry.conflict_rate);
+#else
+					int depth = 0;
+			  		std::string call_contexts = "";
+					while(value->stacks[con][depth]){	
+							call_contexts += "0x";
+							//call_contexts += std::to_string(m->stacks[con][depth]);
+							std::stringstream ss;
+							ss << std::hex << value->stacks[con][depth] << std::dec;
+							call_contexts += ss.str();
+							call_contexts += ",";
+							depth++; 
+					}									
+#endif					
+					
+					// (dleoni) With C++ the name of a function may be very long
+					assert(call_contexts.size() <= MAX_CALL_STACK_DEPTH * 200);
+					//strcpy(sync_perf_entry.line_info[con], call_contexts.c_str());
+
+					std::cout << "Key:" << key << " Value:" << value << std::endl;
+					std::cout << "Stack count:" << value -> stack_count << std::endl;
+					std::cout << call_contexts << std::endl;
+
+					// Store the current call stack in the set of call stacks
+					call_stacks.insert(call_contexts);
+				}
+			}
+		
+			// The access_count has to be positive
+			if (!total_access_count) {
+				std::cout << "Skipped mutex:" << key << "Duplicates:" << sync_vars_unique.count(key) - 1 << std::endl;
+				continue;
+			}
+				
+			// Set the aggregated statistics for the current mutex	
+			sync_perf_entry.conflict_rate = (100*total_fail_count)/double(total_access_count);
+			sync_perf_entry.frequency  = double(total_access_count)/elapsed_time_for_freq; //TODO: fix freqeuncey using max thd->actualRuntim
+
+			// Set the call stacks for the current mutex
+			int stack = 0;
+			for (std::set<std::string>::iterator stack_it = call_stacks.begin(); stack_it != call_stacks.end(); ++stack_it) {
+				strcpy(sync_perf_entry.line_info[stack], (*stack_it).c_str());
+				stack++; 
+			}
+
+			// Update the counter of call stacks with the current mutex
+			sync_perf_entry.count = stack;
+
+			std::cout << "Key:" << key << " Stack count:" << stack << std::endl;
+
+			// Now, depending on the conflict rate and frequency acquisition, check whether the mutex is to printed in one of
+			// the reports
+
+			if (sync_perf_entry.conflict_rate > THRESHOLD_CONFLICT) {
+
+				if( sync_perf_entry.frequency > THRESHOLD_FREQUENCY ) {
+#ifdef COMBINED_REPORT
+					high_conflict_high_freq.push_back(sync_perf_entry);
+#else
+					qhh_count++;
+					report_quadrant(qhh_fs, sync_perf_entry, qhh_count);
+#endif
+				}
+				else {
+#ifdef COMBINED_REPORT
+					high_conflict_low_freq.push_back(sync_perf_entry);
+#else
+					qhl_count++;
+					report_quadrant(qhl_fs, sync_perf_entry, qhl_count);
+#endif
+				}
+				}
+			else {
+				if( sync_perf_entry.frequency > THRESHOLD_FREQUENCY ) {
+					//print call stacks
+#ifdef COMBINED_REPORT
+					low_conflict_high_freq.push_back(sync_perf_entry);
+#else
+					qlh_count++;
+					report_quadrant(qlh_fs, sync_perf_entry, qlh_count);	
+#endif
+				}
+			}	
+		}
+/*
 		for(int i=0; i<total_sync_vars; i++) {
 
 			mutex_t *m = sync_vars.getEntry(i);
@@ -416,7 +576,7 @@ public:
 				}
 			}
 		}
-
+*/
 		std::fstream thd_fs;
 
 		thd_fs.open("thread_waits.csv", std::fstream::out);
@@ -456,7 +616,7 @@ public:
 
 #ifdef REPORT_LINE_INFO
 		//find asymmetric locks
-		printCallStackMap(call_stack_map);
+		//printCallStackMap(call_stack_map);
 		std::vector<std::string>asym_locks;
 		findAsymmetricLock(call_stack_map,asym_locks);
 		
@@ -474,13 +634,15 @@ public:
 #endif
 #ifdef GET_STATISTICS
 		std::cout<< "STATISTICS:\n";
-		std::cout<< "\ttotal Threads: " << total_threads << std::endl;
-		std::cout<< "\ttotal Levels: " << total_levels << std::endl;
-		std::cout<< "\ttotal Thread levels: " << total_thread_levels << std::endl;
-		std::cout<< "\ttotal Distinct Locks: " << id << std::endl;
-		std::cout<< "\ttatal Acquired Locks: " << totalLocks << std::endl;
-		std::cout<< "\ttatal Conflicts: " << totalConflicts << std::endl;
-		std::cout<< "\ttatal CondWaits: " << totalCondWaits << std::endl;
+		std::cout<< "\tTotal Threads: " << total_threads << std::endl;
+		std::cout<< "\tTotal read mutex_t: " << total << std::endl;
+                std::cout<< "\tTotal fake mutex_t: " << total_sync_vars << std::endl;
+		std::cout<< "\tTotal Levels: " << total_levels << std::endl;
+		std::cout<< "\tTotal Thread levels: " << total_thread_levels << std::endl;
+		std::cout<< "\tTotal Distinct Locks: " << id << std::endl;
+		std::cout<< "\tTotal Acquired Locks: " << totalLocks << std::endl;
+		std::cout<< "\tTotal Conflicts: " << totalConflicts << std::endl;
+		std::cout<< "\tTotal CondWaits: " << totalCondWaits << std::endl;
 #endif
 		
 		//std::cout << total_threads << " threads, " << id <<  " mutexes\n";

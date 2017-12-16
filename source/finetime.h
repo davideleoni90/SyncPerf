@@ -37,7 +37,7 @@ extern "C" {
   };
   
   void start  (struct timeinfo *ti);
-	double get_elapsed2ms( struct timeinfo *start, struct timeinfo *stop);
+  double get_elapsed2ms( struct timeinfo *start, struct timeinfo *stop);
 
 #ifdef __cplusplus
 };

@@ -34,8 +34,8 @@ void get_tsc( struct timeinfo *ti )
 {
   unsigned hi, lo;
   __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
-	ti->low  = lo;
-	ti->high = hi;
+  ti->low  = lo;
+  ti->high = hi;
 }
 
 
