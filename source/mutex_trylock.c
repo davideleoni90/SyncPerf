@@ -26,7 +26,7 @@ pthread_mutex_trylock (pthread_mutex_t *mutex) {
   __atomic_fetch_add(&totalLocks, 1, __ATOMIC_RELAXED);
 #endif
 #ifndef ORIGINAL
-	int tid = getThreadIndex();
+  int tid = getThreadIndex();
   if( !is_my_mutex(mutex) )
   {
 		mutex_t *new_mutex = create_mutex(mutex);
@@ -51,8 +51,8 @@ pthread_mutex_trylock (pthread_mutex_t *mutex) {
 
 #ifdef WITH_TRYLOCK
 	//add_access_count(curr_meta, idx);
-	inc_access_count(mutex_data->entry_index, tid);
-	unsigned int esp;
+  inc_access_count(mutex_data->entry_index, tid);
+  unsigned int esp;
   asm volatile("movl %%esp,%0\n"
                  : "=r"(esp));
   unsigned int esp_offset =  getThreadStackTop() - esp;

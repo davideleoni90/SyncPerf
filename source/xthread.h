@@ -189,8 +189,6 @@ public:
 
   // Start a thread level
   void startThreadLevelInfo(int threadIndex) {
-    printf("START THREAD LEVEL:%d\n", _threadLevel);
-    fflush(stdout);
     struct threadLevelInfo * info = &_threadLevelInfo[_threadLevel];
     start(&info->startTime);
     info->beginIndex = threadIndex;
@@ -200,8 +198,6 @@ public:
 	
   // Stop a thread level
   void stopThreadLevelInfo(void) {
-    printf("STOP THREAD LEVEL:%d\n", _threadLevel);
-    fflush(stdout);
     struct threadLevelInfo * info = &_threadLevelInfo[_threadLevel];
 		
     info->elapse = get_elapsed2ms( &info->startTime, NULL);

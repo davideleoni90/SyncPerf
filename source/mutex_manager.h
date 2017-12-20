@@ -46,6 +46,8 @@ typedef struct {
 	UINT32 fail_count;
 	UINT32 cond_waits;	
 	UINT32 trylock_fail_count;
+	// (dleoni) Time necessary to acquire the lock
+	WAIT_TIME_TYPE mutex_lock_wait;
 	WAIT_TIME_TYPE cond_futex_wait; // time spend in cond wait
 	WAIT_TIME_TYPE futex_wait; // time spend for lock grabbing
 }thread_mutex_t;
@@ -65,6 +67,7 @@ void inc_fail_count(size_t mut_index, int thd_idx);
 void inc_cond_wait_count(size_t mut_index, int thd_idx);
 void add_cond_wait_time(size_t mut_index, int thd_idx, struct timeinfo *st);
 void add_futex_wait(size_t mut_index, int thd_idx, struct timeinfo *st);
+void add_mutex_lock_wait_time(size_t mut_index, int thd_idx, struct timeinfo *st);
 
 void start_timestamp( struct timeinfo *st ); 
 //void add_futex_wait( mutex_meta_t *mutex, int idx, struct timeinfo *st );

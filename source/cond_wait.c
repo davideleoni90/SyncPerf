@@ -103,12 +103,12 @@ pthread_cond_wait (pthread_cond_t *cond, pthread_mutex_t *mutex)
 	pthread_mutex_t *orig_mutex;
 	orig_mutex = mutex; //store for passing in the cond_lock func
 	int tid = getThreadIndex();
-  mutex_t *mutex_data = (mutex_t *)get_mutex(mutex);
+	mutex_t *mutex_data = (mutex_t *)get_mutex(mutex);
 	
-  mutex = &mutex_data->mutex;
+	mutex = &mutex_data->mutex;
 	
 
-  struct timeinfo *wait_start;
+	struct timeinfo *wait_start;
 //
 //#if 1	
 //	long stack[MAX_CALL_STACK_DEPTH + 1];
@@ -131,11 +131,11 @@ pthread_cond_wait (pthread_cond_t *cond, pthread_mutex_t *mutex)
 
 	/* Now we can release the mutex.  */
 	err = __pthread_mutex_unlock_usercnt (mutex, 0);
-  if (err)
-  {
-    lll_unlock (cond->__data.__lock, pshared);
-    return err;
-  }
+	if (err)
+	{
+		lll_unlock (cond->__data.__lock, pshared);
+    		return err;
+	}
 
 	/* We have one new user of the condvar.  */
 	++cond->__data.__total_seq;

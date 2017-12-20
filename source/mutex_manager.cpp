@@ -45,8 +45,12 @@ mutex_t* create_mutex( pthread_mutex_t *mutex )
   // (dleoni) Store also the pointer to the original mutex
   // (for debugging purpose)
   new_mutex->nominalmutex = mutex;
+
+#ifdef MY_DEBUG
   printf("MUTEX:%p\n", mutex);
   fflush(stdout);
+#endif
+
   return new_mutex;
 }
 
@@ -211,6 +215,12 @@ void add_futex_wait(size_t mut_index, int thd_idx, struct timeinfo *st)
   //WAIT_TIME_TYPE waits = elapsed2ms(elapse);
 
 	get_thread_mutex_data(mut_index,thd_idx)->futex_wait += waits;
+}
+
+// (dleoni) Add the time needed to grab the lock
+void add_mutex_lock_wait_time (size_t mut_index, int thd_idx, struct timeinfo *st) {
+	WAIT_TIME_TYPE waits = get_elapsed2ms( st, NULL);
+	get_thread_mutex_data(mut_index,thd_idx) -> mutex_lock_wait += waits;
 }
 
 #if 0

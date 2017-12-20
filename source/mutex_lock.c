@@ -161,7 +161,10 @@ simple:
 		}
 #endif
 #endif
+		// (dleoni) Store time necessary to acquire the lock
+		start_timestamp(&wait_start);
 		LLL_MUTEX_LOCK (mutex);
+		add_mutex_lock_wait_time(mutex_data->entry_index, tid, &wait_start);
 		assert (mutex->__data.__owner == 0);
 #ifndef ORIGINAL
 #ifndef NO_INCR

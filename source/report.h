@@ -12,7 +12,7 @@
 #include <vector>
 #include <stdexcept>
 #include <set>
-
+#include <algorithm>
 // (dleoni) Include to use backtrace
 #include <execinfo.h>
 
@@ -20,7 +20,6 @@
 #include <cxxabi.h>
 
 #define MAXBUFSIZE 4096
-#define COMBINED_REPORT 1
 
 /*
  * @file   report.h
@@ -35,20 +34,35 @@
 typedef std::map< std::string, std::vector<double> > Map;
 #endif
 
-
 typedef struct {
 	char line_info[MAX_NUM_STACKS][MAX_CALL_STACK_DEPTH * 50];
 	double conflict_rate;
 	double frequency;
+	// (dleoni) Average time to wait to acquire the mutex in pthread_mutex_lock
+	WAIT_TIME_TYPE mutex_lock_wait_time;
+	WAIT_TIME_TYPE wait_time;
+	// (dleoni) Average time to wait to acquire the mutex in pthread_cond_wait
+	WAIT_TIME_TYPE cond_wait_time;
 	int count; //number of line info
 }sync_perf_t;
 
-typedef struct {
-	UINT32 access_count;
-	UINT32 fail_count;
-	char call_site[MAX_CALL_STACK_DEPTH * 50];
-}call_site_info_t;
+// (dleoni) Operator to sort the type sync_perf_t by descending wait_time
+struct sort_by_mutex_wait_time
+{
+    inline bool operator() (const sync_perf_t& a, const sync_perf_t& b)
+    {
+        return (a.mutex_lock_wait_time < b.mutex_lock_wait_time);
+    }
+};
 
+// (dleoni) Operator to sort the type sync_perf_t by descending cond_wait_time
+struct sort_by_cond_wait_time
+{
+    inline bool operator() (const sync_perf_t& a, const sync_perf_t& b)
+    {
+        return (a.cond_wait_time < b.cond_wait_time);
+    }
+};
 
 class Report {
 
@@ -137,17 +151,6 @@ public:
   //std::string get_call_stack_string( long *call_stack ){
   std::string get_call_stack_string( void **call_stack ){
 
-    //char _curFilename[MAXBUFSIZE];
-    //int count = readlink("/proc/self/exe", _curFilename, MAXBUFSIZE);
-    //if (count <= 0 || count >= MAXBUFSIZE)
-    //{
-    //  fprintf(stderr, "Failed to get current executable file name\n" );
-    //  exit(1);
-    //}
-    //_curFilename[count] = '\0';
-
-
-		
     char buf[MAXBUFSIZE];
     std::string stack_str="";
     
@@ -163,8 +166,10 @@ public:
 	if (!frame.compare("---"))
 		continue;
 	stack_str += frame;
-        stack_str += "\n";
+        stack_str += "->";
     }
+    // (dleoni) Remove last "->"
+    stack_str = stack_str.substr(0, stack_str.size() - 2);
     free(strings);
     /*while(call_stack[j] != 0 ) {
       //printf("%#lx\n", m->stacks[i][j]);  
@@ -182,25 +187,7 @@ public:
     return stack_str;
   }
 
-#if 0
-	void updateCallSiteInfo( std::map<size_t, call_site_info_t>& call_site_map, UINT32 access_count, UINT32 fail_count, size_t call_site, std::string context ){
-		std::map<size_t, call_site_info_t>::iterator it = call_site_map.find(call_site);
-		if(it != call_site_map.end()){
-			it->second.access_count += access_count;
-			it->second.fail_count += fail_count;
-		}
-		else{
-			call_site_info_t new_context;
-			new_context.access_count = access_count;
-			new_context.fail_count = fail_count;
-			strcpy(new_context.call_site, context.c_str());
-			call_site_map[call_site] = new_context;
-		}
 
-	}
-#endif
-
-	
 #ifdef REPORT_LINE_INFO
 	void updateCallStackMap( Map& call_stack_map, std::string call_contexts, double conflict_rate){
 		
@@ -253,9 +240,11 @@ public:
 		setFileName();
 #endif
 
-		std::cout<< "\n\nSyncPerf Msg: END OF PROGRAM";
+		//std::cout<< "\n\nSyncPerf Msg: END OF PROGRAM";
 		
-		std::cout<< "\nSyncPerf Msg: Reporting in file: syncperf.report\nSyncPerf Msg: Thread reports in file: thread.csv " << std::endl;
+		//std::cout<< "\nSyncPerf Msg: Reporting in file: syncperf.report\nSyncPerf Msg: Thread reports in file: thread.csv " << std::endl;
+
+#ifdef VERBOSE_OUTPUT
 #ifdef COMBINED_REPORT
 		std::vector<sync_perf_t>high_conflict_low_freq;
 		std::vector<sync_perf_t>high_conflict_high_freq;
@@ -288,33 +277,20 @@ public:
 		unsigned long qlh_count = 0;
 		unsigned long qhl_count  = 0;
 #endif
+#endif
 	  	int total_threads = xthread::getInstance().getMaxThreadIndex();
 		unsigned long total_levels = xthread::getInstance().getTotalThreadLevels();
 
+#ifdef THREAD_WAITS
 		WAIT_TIME_TYPE *thread_waits = malloc(sizeof(WAIT_TIME_TYPE)*total_threads);
 		for(int idx=0; idx<total_threads; idx++) thread_waits[idx] = 0;	
-#if 0	
-		std::fstream thd_fs;
-		thd_fs.open("thread_waits.csv", std::fstream::out);
-		thd_fs << "tid, type, runtime, wait_time" << std::endl; 
-		for(int idx=0; idx< total_threads; idx++){
-			thread_t *thd = xthread::getInstance().getThreadInfoByIndex(idx);
-			thd_fs << idx << ", " << std::hex <<(void*)( thd->startRoutine)<< ", " <<std::dec<< thd->actualRuntime << "," <<  thread_waits[idx]  << std::endl;
-		}
 #endif
 		unsigned long total_thread_levels=xthread::getInstance().getTotalThreadLevels();
 
 		threadLevelInfo *thd_level = xthread::getInstance().getThreadLevelByIndex(total_thread_levels);
-#if 0
-		thd_fs << "Elapsed time " << thd_level->elapse << std::endl;
-#endif
-		//double elapsed_time_for_freq = thd_level->elapse; //milliseconds
+		
 		double elapsed_time_for_freq = thd_level->elapse < 1000 ? 1000 : thd_level->elapse; //TODO: remove this, use the previous line instead
-#if 0		
-		thd_fs.close();	
-#endif 
 
-		//std::map<size_t, call_site_info_t>call_site_map;
 		
 #ifdef REPORT_LINE_INFO
 		Map call_stack_map;
@@ -328,6 +304,9 @@ public:
 		// pointed by it (duplicates)
 		std::multimap<pthread_mutex_t*, mutex_t*> sync_vars_unique;		
 
+		// The vector containing the report entry sync_perf_t to be sorted before being written to the report
+		std::vector<sync_perf_t> final_report_entries;
+
 		// Find the duplicates
 		for(int i=0; i < total_sync_vars; i++) {
 			
@@ -340,9 +319,9 @@ public:
 
 			// A key
 			pthread_mutex_t* key = it -> first;
-
+#ifdef MY_DEBUG
 			std::cout << sync_vars_unique.count((*it).first) - 1 << " " << (*it).first << " DUPLICATES" << std::endl;
-			
+#endif		
 			// For debug only and for stats
 			id++;
 			total += sync_vars_unique.count((*it).first);
@@ -354,6 +333,7 @@ public:
 			unsigned int total_trylock_fails = 0;
 			WAIT_TIME_TYPE total_wait_time = 0;
 			WAIT_TIME_TYPE total_lock_wait = 0;			
+			WAIT_TIME_TYPE total_mutex_lock_wait = 0;			
 			
 			// The entry in the final report corresponding to the current pthread_mutex_t*	
 			sync_perf_t sync_perf_entry;
@@ -386,19 +366,25 @@ public:
 					//times
 					total_wait_time += per_thd_data->cond_futex_wait;
 					total_lock_wait += per_thd_data->futex_wait;
+					// (dleoni) Aggregate time to grab lock
+					total_mutex_lock_wait += per_thd_data -> mutex_lock_wait;
+#ifdef THREAD_WAITS
 					thread_waits[idx] += (per_thd_data->cond_futex_wait + per_thd_data->futex_wait);
+#endif
 				}
 
 				// Add the call stacks for the current value to those corresponding to the current key
 				for(int con=0; con < value -> stack_count; con++) {
-#ifdef REPORT_LINE_INFO
-					std::string call_contexts = get_call_stack_string(value -> stacks[con]);		
 					
+					std::string call_contexts = get_call_stack_string(value -> stacks[con]);
+
+#ifdef VERBOSE_OUTPUT					
+#ifdef REPORT_LINE_INFO
 					//update call stack map
-					//updateCallStackMap(call_stack_map, call_contexts,sync_perf_entry.conflict_rate);
+					updateCallStackMap(call_stack_map, call_contexts,sync_perf_entry.conflict_rate);
 #else
 					int depth = 0;
-			  		std::string call_contexts = "";
+			  		call_contexts = "";
 					while(value->stacks[con][depth]){	
 							call_contexts += "0x";
 							//call_contexts += std::to_string(m->stacks[con][depth]);
@@ -409,15 +395,15 @@ public:
 							depth++; 
 					}									
 #endif					
-					
+#endif			
 					// (dleoni) With C++ the name of a function may be very long
 					assert(call_contexts.size() <= MAX_CALL_STACK_DEPTH * 200);
 					//strcpy(sync_perf_entry.line_info[con], call_contexts.c_str());
-
+#ifdef MY_DEBUG
 					std::cout << "Key:" << key << " Value:" << value << std::endl;
 					std::cout << "Stack count:" << value -> stack_count << std::endl;
 					std::cout << call_contexts << std::endl;
-
+#endif
 					// Store the current call stack in the set of call stacks
 					call_stacks.insert(call_contexts);
 				}
@@ -425,14 +411,27 @@ public:
 		
 			// The access_count has to be positive
 			if (!total_access_count) {
-				std::cout << "Skipped mutex:" << key << "Duplicates:" << sync_vars_unique.count(key) - 1 << std::endl;
+#ifdef MY_DEBUG
+				std::cout << "Skipped mutex_t:" << key << "Duplicates:" << sync_vars_unique.count(key) - 1 << std::endl;
+#endif
+				continue;
+			}
+
+			// The cond_wait has to be positive
+			if (!total_cond_wait) {
+#ifdef MY_DEBUG
+                                std::cout << "Skipped cond_t:" << key << "Duplicates:" << sync_vars_unique.count(key) - 1 << std::endl;
+#endif
 				continue;
 			}
 				
 			// Set the aggregated statistics for the current mutex	
 			sync_perf_entry.conflict_rate = (100*total_fail_count)/double(total_access_count);
 			sync_perf_entry.frequency  = double(total_access_count)/elapsed_time_for_freq; //TODO: fix freqeuncey using max thd->actualRuntim
-
+			sync_perf_entry.mutex_lock_wait_time = total_mutex_lock_wait / double(total_access_count);
+			sync_perf_entry.wait_time = total_lock_wait / double(total_access_count);
+			sync_perf_entry.cond_wait_time = total_wait_time / double(total_cond_wait);
+			
 			// Set the call stacks for the current mutex
 			int stack = 0;
 			for (std::set<std::string>::iterator stack_it = call_stacks.begin(); stack_it != call_stacks.end(); ++stack_it) {
@@ -442,12 +441,15 @@ public:
 
 			// Update the counter of call stacks with the current mutex
 			sync_perf_entry.count = stack;
-
+#ifdef MY_DEBUG
 			std::cout << "Key:" << key << " Stack count:" << stack << std::endl;
+#endif
+			// Add entry to the vector
+			final_report_entries.push_back(sync_perf_entry);
 
 			// Now, depending on the conflict rate and frequency acquisition, check whether the mutex is to printed in one of
 			// the reports
-
+#ifdef VERBOSE_OUTPUT
 			if (sync_perf_entry.conflict_rate > THRESHOLD_CONFLICT) {
 
 				if( sync_perf_entry.frequency > THRESHOLD_FREQUENCY ) {
@@ -478,105 +480,66 @@ public:
 #endif
 				}
 			}	
+#endif
 		}
-/*
-		for(int i=0; i<total_sync_vars; i++) {
 
-			mutex_t *m = sync_vars.getEntry(i);
-			assert(m->entry_index == i);
-			
-			unsigned int total_access_count = 0;
-			unsigned int total_fail_count = 0;
-			unsigned int total_cond_wait = 0;
-			unsigned int total_trylock_fails = 0;
-			WAIT_TIME_TYPE total_wait_time = 0;
-			WAIT_TIME_TYPE total_lock_wait = 0;			
 
-			// sum all thread local data
-			for(int idx=0; idx<total_threads; idx++ ){
-				//count
-			  	thread_mutex_t *per_thd_data = get_thread_mutex_data( m->entry_index, idx);
-				total_access_count += per_thd_data->access_count;
-				total_fail_count += per_thd_data->fail_count;
-				total_cond_wait += per_thd_data->cond_waits;
-				total_trylock_fails += per_thd_data->trylock_fail_count;
-				//times
-				total_wait_time += per_thd_data->cond_futex_wait;
-				total_lock_wait += per_thd_data->futex_wait;
-			
-				thread_waits[idx] += (per_thd_data->cond_futex_wait + per_thd_data->futex_wait);
-			}
-
-			sync_perf_t sync_perf_entry;
-			sync_perf_entry.count = 0;
-			if( total_access_count > 0 ) { //TODO: access_count = 0 is poosible as fix setSyncEntry ignores new mutex ,index already increased in recordentries
-				printf("TOPEX:%p\n", m->nominalmutex);
-                        	fflush(stdout);	
-				id++; //for debug only and for stats
-
-				sync_perf_entry.conflict_rate = (100*total_fail_count)/double(total_access_count);
-				sync_perf_entry.frequency  = double(total_access_count)/elapsed_time_for_freq; //TODO: fix freqeuncey using max thd->actualRuntim
-
-				//print call stacks
-				for(int con=0; con<m->stack_count; con++){
-#ifdef REPORT_LINE_INFO
-					std::string call_contexts = get_call_stack_string(m->stacks[con]);		
-					//update call stack map
-					updateCallStackMap(call_stack_map, call_contexts,sync_perf_entry.conflict_rate);
-#else
-					int depth = 0;
-			  		std::string call_contexts = "";
-					while(m->stacks[con][depth]){	
-							call_contexts += "0x";
-							//call_contexts += std::to_string(m->stacks[con][depth]);
-							std::stringstream ss;
-							ss << std::hex << m->stacks[con][depth] << std::dec;
-							call_contexts += ss.str();
-							call_contexts += ",";
-							depth++; 
-					}									
-#endif					
-					//assert(call_contexts.size() <= MAX_CALL_STACK_DEPTH * 50);
-					// (dleoni) With C++ the name of a function may be very long
-					assert(call_contexts.size() <= MAX_CALL_STACK_DEPTH * 200);
-					strcpy(sync_perf_entry.line_info[con], call_contexts.c_str());
-					sync_perf_entry.count++;
-				}
-			
+#ifdef WITH_COND
+		std::vector<sync_perf_t> tmp (final_report_entries);
+#endif
+		// (dleoni) Sort entries by wait time and write to the corresponding report
+	 	std::sort (final_report_entries.begin(), final_report_entries.end(), sort_by_mutex_wait_time());
+		
+		int index = 0;
+		for (std::vector<sync_perf_t>::reverse_iterator it = final_report_entries.rbegin(); it != final_report_entries.rend(); ++it, ++index) {
+                	if (index == 10) break;
+		
+			// Write the avg wait time
+			std::cout << it -> mutex_lock_wait_time << "\t";
+	
+			// Write the stacks count
+			//std::cout << it -> count << "\t";
 				
-				if( sync_perf_entry.conflict_rate > THRESHOLD_CONFLICT ){
-
-					if( sync_perf_entry.frequency > THRESHOLD_FREQUENCY ){
-#ifdef COMBINED_REPORT
-						high_conflict_high_freq.push_back(sync_perf_entry);
-#else
-						qhh_count++;
-						report_quadrant(qhh_fs, sync_perf_entry, qhh_count);
-#endif
-					}
-					else{
-#ifdef COMBINED_REPORT
-						high_conflict_low_freq.push_back(sync_perf_entry);
-#else
-						qhl_count++;
-						report_quadrant(qhl_fs, sync_perf_entry, qhl_count);
-#endif
-					}
-				}
-				else{
-					if( sync_perf_entry.frequency > THRESHOLD_FREQUENCY ){
-						//print call stacks
-#ifdef COMBINED_REPORT
-						low_conflict_high_freq.push_back(sync_perf_entry);
-#else
-						qlh_count++;
-						report_quadrant(qlh_fs, sync_perf_entry, qlh_count);	
-#endif
-					}
+			// Write the stacks
+			for (int idx = 0; idx < it -> count; idx++) {
+				std::cout << std::string(it -> line_info[idx]); 
+				if (idx != (it -> count - 1)) {
+					std::cout <<  ",";
 				}
 			}
+
+			if (index < 9) {
+				std::cout << "---";
+			}
 		}
-*/
+#ifdef WITH_COND          
+		index = 0;
+		// (dleoni) Do the same for conditional wait time
+		std::sort (tmp.begin(), tmp.end(), sort_by_cond_wait_time());
+
+                for (std::vector<sync_perf_t>::reverse_iterator it = tmp.rbegin(); it != tmp.rend(); ++it, ++index) {
+                        if (index == 10) break;
+			
+			// Write the avg cond wait time
+			std::cout << it -> cond_wait_time << "\t";
+			
+			// Write the stacks count
+			//std::cout << it -> count << "\t";
+                        
+			// Write the stacks
+                        for (int idx = 0; idx < it -> count; idx++) {
+                                std::cout << std::string(it -> line_info[idx]);
+				if (idx != it -> count - 1)
+					std::cout << ",";
+                        }
+
+			if (index < 9)
+				std::cout << "---";	
+                }
+#endif
+
+#ifdef THREAD_WAITS
+	
 		std::fstream thd_fs;
 
 		thd_fs.open("thread_waits.csv", std::fstream::out);
@@ -590,7 +553,8 @@ public:
 		
 		//thd_fs << "Elapsed time " << thd_level->elapse << std::endl;
 		thd_fs.close();
-	
+#endif
+
 #ifdef COMBINED_REPORT
 		std::fstream fs;
 		fs.open("syncperf.report", std::fstream::out);

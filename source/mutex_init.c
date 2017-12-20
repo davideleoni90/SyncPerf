@@ -33,7 +33,8 @@ int pthread_mutex_init (pthread_mutex_t *mutex, const pthread_mutexattr_t *mutex
 	imutexattr = ((const struct pthread_mutexattr *) mutexattr
 		?: &default_mutexattr);
 #ifdef MY_DEBUG
-	printf("In my pthread mutex init\n");
+	printf("In my pthread mutex init:%p\n", mutex);
+	fflush(stdout);
 #endif
 	/* Sanity checks.  */
 	switch (__builtin_expect (imutexattr->mutexkind
