@@ -28,7 +28,17 @@
 
 #include "finetime.h"
 
-double cpu_freq = 2000000; //KHz
+//double cpu_freq = 2000000; //KHz
+
+// (dleoni) Get the CPU freq from make
+// (Thanks to Daniel Castro)
+
+#ifdef CPU_FREQ
+  double cpu_freq = CPU_FREQ; //KHz
+#else
+  double cpu_freq = 2000000;  //KHz
+#endif
+
 /*
 void get_tsc( struct timeinfo *ti )
 {
